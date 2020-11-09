@@ -19,6 +19,9 @@ class CommunityDetector:
 		self.partition = []
 		self.remove_self_loops()
 
+	def __str__(self):
+		return 'CD:' + self.name
+
 	def remove_self_loops(self):
 		# algorithms tend to work better if there is no self-loop in the given graph, so we call this method at first.
 		utils.remove_self_loops(self.graph)
@@ -58,17 +61,10 @@ class CommunityDetector:
 		# THE MAIN FUNCTION OF THE CLASS, finds all communities of the graph.
 		while self.number_discovered_nodes < self.graph.number_of_nodes():
 			self.determine_starting_node(node_selection_mode)
-
-			# # for debug
-			# print('next start node =', self.starting_nodes)
-
-			community = self.local_searcher.community_search(start_node=self.starting_nodes[-1], with_amend=with_amend)
+			community = self.local_searcher.community_search(start_node=self.starting_nodes[-1])
 			self.partition.append(community)
-			self.local_searcher.reset()
 			self.update_discovered_nodes_info()
-
-			# # for debug
-			# print('total found community =', community, len(community))
+			self.local_searcher.reset()
 
 			if overlap_enabled:
 				self.local_searcher.empty_ignored_nodes()

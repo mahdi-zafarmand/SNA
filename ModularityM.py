@@ -1,6 +1,5 @@
 from CommunitySearch import CommunitySearcher
 from CommunityDetection import CommunityDetector
-import utils
 
 
 class ModularityMCommunityDiscovery(CommunitySearcher):
@@ -15,36 +14,73 @@ class ModularityMCommunityDiscovery(CommunitySearcher):
 	def community_search(self, start_node, with_amend=False):  # no use for 'with_amend' in this algorithm.
 		# THE MAIN FUNCTION OF THE CLASS, finds all other nodes that belong to the same community as the start_node does.
 		self.set_start_node(start_node)
-		modularity_r = 0.0
-		T = self.graph.degree[start_node]
+		sorted_shell = list(self.shell)
 
-		while len(self.community) < self.graph.number_of_nodes() and len(self.shell) > 0:
-			delta_r = {}  # key: candidate nodes from the shell set, value: total improved strength after a node joins.
-			delta_T = {}  # key: candidate nodes from the shell set, value: delta T (based on notations of the paper).
-			for node in self.shell:
-				delta_r[node], delta_T[node] = self.compute_modularity((modularity_r, T), node)
+		modularity = 0.0
+		while len(self.community) < self.graph.number_of_nodes() and len(self.shell) > 1:
+			# addition step
+			Q_list = []
+			sorted_shell.sort(key=self.graph.degree)
+			for candidate_node in sorted_shell:
+				new_modularity = self.compute_modularity('addition', candidate_node)
+				if new_modularity > modularity:
+					modularity = new_modularity
+					self.update_sets_when_node_joins(candidate_node)
+					sorted_shell.remove(candidate_node)
+					Q_list.append(candidate_node)
 
-			new_node = utils.find_best_next_node(delta_r)
-			if delta_r[new_node] < CommunitySearcher.minimum_improvement:
+			while True:
+				# deletion step
+				Q_delete = []
+				for candidate_node in self.community:
+					new_modularity = self.compute_modularity('deletion', candidate_node)
+					if new_modularity > modularity:
+						modularity = new_modularity
+						self.update_sets_when_node_leaves(candidate_node)
+						Q_delete.append(candidate_node)
+
+						if candidate_node in Q_list:
+							Q_list.remove(candidate_node)
+
+				if len(Q_delete) == 0:
+					break
+
+			for node in Q_list:
+				neighbors_of_node = list(self.graph.neighbors(node))
+				self.exclude_ignored_nodes(neighbors_of_node)
+				for neighbor in neighbors_of_node:
+					if (neighbor in self.community) is False:
+						self.shell.add(neighbor)
+						if (neighbor in sorted_shell) is False:
+							sorted_shell.append(neighbor)
+
+			if len(Q_list) == 0:
 				break
 
-			modularity_r += delta_r[new_node]
-			T += delta_T[new_node]
-			self.community.append(new_node)
-			self.update_shell(new_node)
-			self.update_boundary(new_node)
-		# # for debug
-		# print('community =', self.community)
-		# print('boundary =', self.boundary)
-		# print('shell =', self.shell)
+		if self.starting_node in self.community:
+			return sorted(self.community)
+		return []
 
-		return sorted(self.community)  # sort is only for a better representation, can be ignored to boost performance.
+	def compute_modularity(self, auxiliary_info, candidate_node):
+		mode = auxiliary_info
+		ind_s, outd_s = 0, 0
 
-	def compute_modularity(self, candidate_node):
-		pass
+		community = list(self.community)
+		if mode == 'addition':
+			community.append(candidate_node)
+		elif mode == 'deletion':
+			community.remove(candidate_node)
 
-	def find_best_next_node(self, improvements):
-		pass
+		for node in community:
+			neighbors = list(self.graph.neighbors(node))
+			self.exclude_ignored_nodes(neighbors)
+			for neighbor in neighbors:
+				if neighbor in community:
+					ind_s += 1
+				else:
+					outd_s += 1
+
+		return float(ind_s) / float(outd_s)
 
 
 class ModularityMCommunityDetection(CommunityDetector):

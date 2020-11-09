@@ -1,14 +1,15 @@
 from CommunitySearch import CommunitySearcher
 from CommunityDetection import CommunityDetector
 import networkx as nx
+from random import choice
 
 
 class LocalSiwoCommunityDiscovery(CommunitySearcher):
 	# the class to search for the community of a given node in a social network using Local SIWO algorithm.
 
-	def __init__(self, graph):
+	def __init__(self, graph, nodes_to_be_ignored=None):
 		# initializes the object
-		super(LocalSiwoCommunityDiscovery, self).__init__('Local SIWO', graph)
+		super(LocalSiwoCommunityDiscovery, self).__init__('Local SIWO', graph, nodes_to_be_ignored)
 		self.dict_common_neighbors = {}
 		self.max_common_neighbors = {}
 		self.strength_assigned_nodes = set()  # assigning strength values to the edges that are connected to these nodes.
@@ -28,20 +29,19 @@ class LocalSiwoCommunityDiscovery(CommunitySearcher):
 			self.max_common_neighbors[node] = -1
 
 		for neighbor in self.graph.neighbors(node):
-			if neighbor in self.dict_common_neighbors[node]:
-				continue
-			if (neighbor in self.dict_common_neighbors) is False:
-				self.dict_common_neighbors[neighbor] = {}
-				self.max_common_neighbors[neighbor] = -1
+			if (neighbor in self.dict_common_neighbors[node]) is False:
+				if (neighbor in self.dict_common_neighbors) is False:
+					self.dict_common_neighbors[neighbor] = {}
+					self.max_common_neighbors[neighbor] = -1
 
-			number_common_neighbors = sum(1 for _ in nx.common_neighbors(self.graph, node, neighbor))
-			self.dict_common_neighbors[node][neighbor] = number_common_neighbors
-			self.dict_common_neighbors[neighbor][node] = number_common_neighbors
+				number_common_neighbors = sum(1 for _ in nx.common_neighbors(self.graph, node, neighbor))
+				self.dict_common_neighbors[node][neighbor] = number_common_neighbors
+				self.dict_common_neighbors[neighbor][node] = number_common_neighbors
 
-			if number_common_neighbors > self.max_common_neighbors[node]:
-				self.max_common_neighbors[node] = number_common_neighbors
-			if number_common_neighbors > self.max_common_neighbors[neighbor]:
-				self.max_common_neighbors[neighbor] = number_common_neighbors
+				if number_common_neighbors > self.max_common_neighbors[node]:
+					self.max_common_neighbors[node] = number_common_neighbors
+				if number_common_neighbors > self.max_common_neighbors[neighbor]:
+					self.max_common_neighbors[neighbor] = number_common_neighbors
 
 	def assign_local_strength(self, node):
 		# assigns strength to the edges that are connected to the given node, if the node has not been visited before.
@@ -87,7 +87,7 @@ class LocalSiwoCommunityDiscovery(CommunitySearcher):
 
 		return best_candidate, best_improvement
 
-	def amend_for_community_search(self):
+	def merge_dangling_nodes(self):
 		# adds any dangling node in the neighborhood of the discovered community.
 		neighborhood = set()
 		for node in self.community:
@@ -95,9 +95,25 @@ class LocalSiwoCommunityDiscovery(CommunitySearcher):
 				neighborhood.add(neighbor)
 
 		dangling_neighbors = [node for node in neighborhood if self.graph.degree[node] == 1]
+		self.exclude_ignored_nodes(dangling_neighbors)
 		self.community = list(set(self.community + dangling_neighbors))
+		self.fill_ignored_nodes(dangling_neighbors)
 
-	def community_search(self, start_node, with_amend=False):
+	def amend_small_communities(self):
+		if len(self.community) < 3:
+			neighbors = set()
+			for node in self.community:
+				neighbors.update(self.graph.neighbors(node))
+			for node in self.community:
+				neighbors.discard(node)
+			self.exclude_ignored_nodes(neighbors)
+			if len(neighbors) > 0:
+				random_start_node = choice(list(neighbors))
+				next_community_searcher = LocalSiwoCommunityDiscovery(self.graph, set(self.nodes_to_be_ignored))
+				self.community += next_community_searcher.community_search(random_start_node)
+				self.fill_ignored_nodes(self.community)
+
+	def community_search(self, start_node):
 		# THE MAIN FUNCTION OF THE CLASS, finds all other nodes that belong to the same community as the start_node does.
 		self.set_start_node(start_node)
 		self.assign_local_strength(self.starting_node)
@@ -111,13 +127,10 @@ class LocalSiwoCommunityDiscovery(CommunitySearcher):
 			if improvement < CommunitySearcher.minimum_improvement:
 				break
 
-			self.community.append(new_node)
-			self.update_shell(new_node)
-			# this algorithm does not use boundary set, so no need to update that.
+			self.update_sets_when_node_joins(new_node)
 
-		if with_amend:
-			self.amend_for_community_search()
-
+		self.amend_small_communities()
+		self.merge_dangling_nodes()
 		return sorted(self.community)   # sort is only for a better representation, can be ignored to boost performance.
 
 
